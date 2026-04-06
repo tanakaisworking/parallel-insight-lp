@@ -180,20 +180,13 @@
       position: absolute;
       top: 0;
       right: calc(100% + 12px);
-      width: 700px;
+      width: 100%;
       pointer-events: none;
       user-select: none;
-      -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0,0,0,0.28) 100%);
-      mask-image: linear-gradient(to right, transparent 0%, rgba(0,0,0,0.28) 100%);
+      -webkit-mask-image: linear-gradient(to right, transparent 0%, transparent 62%, rgba(0,0,0,0.06) 78%, rgba(0,0,0,0.2) 100%);
+      mask-image: linear-gradient(to right, transparent 0%, transparent 62%, rgba(0,0,0,0.06) 78%, rgba(0,0,0,0.2) 100%);
     }
-    .hero__mirror-text {
-      font-family: var(--font-display);
-      font-size: clamp(32px, 6vw, 64px);
-      font-weight: 800;
-      line-height: 1.15;
-      letter-spacing: -0.02em;
-      color: var(--text-strong);
-      white-space: nowrap;
+    .hero__mirror-inner {
       transform: scaleX(-1);
     }
     @media (max-width: 1100px) {
@@ -611,7 +604,23 @@
           <div class="hero__main">
             <div class="hero__line" aria-hidden="true"></div>
             <div class="hero__mirror-wrap" aria-hidden="true">
-              <div class="hero__mirror-text">その施策、<br>本当に効いたのか。</div>
+              <div class="hero__mirror-inner">
+                <div class="hero__tagline">
+                  その施策、<br>本当に効いたのか。
+                  <span>CSVだけで答えが出る。</span>
+                </div>
+                <p class="hero__sub">
+                  AIが"施策を打たなかった場合"を予測し、<br>
+                  実績との差分で、施策の純粋な効果を測定します。
+                </p>
+                <p class="hero__signature">Make your Parallel, easily.</p>
+                <div class="hero__actions" style="margin-top:48px;">
+                  <span class="btn btn--primary">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+                    無料ダウンロード
+                  </span>
+                </div>
+              </div>
             </div>
             <h1 class="hero__tagline rv" data-i18n="hero-h1">
               その施策、<br>本当に効いたのか。
@@ -1046,8 +1055,14 @@
         }
       });
 
-      var mirrorEl = document.querySelector('.hero__mirror-text');
-      if (mirrorEl) mirrorEl.innerHTML = 'Did your campaign<br>actually work?';
+      var mirrorInner = document.querySelector('.hero__mirror-inner');
+      if (mirrorInner) {
+        mirrorInner.querySelector('.hero__tagline').innerHTML =
+          'Did your campaign<br>actually work?<span>CSV is all you need for the answer.</span>';
+        mirrorInner.querySelector('.hero__sub').innerHTML =
+          'AI predicts what would have happened without your campaign,<br>and measures the true effect as the gap against actual results.';
+        mirrorInner.querySelector('span.btn').childNodes[mirrorInner.querySelector('span.btn').childNodes.length - 1].textContent = ' Free Download';
+      }
     })();
   </script>
 
