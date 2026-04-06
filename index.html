@@ -582,6 +582,18 @@
     }
     .footer__links a:hover { color: var(--text); }
     .footer__copy { font-family: var(--font-en); font-size: 11px; color: var(--text-muted); opacity: 0.5; }
+    .lang-toggle {
+      font-family: var(--font-en); font-size: 11px; font-weight: 500;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      background: none;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 4px;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .lang-toggle:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
 
   </style>
 </head>
@@ -953,7 +965,10 @@
           <a href="#" data-i18n="footer-terms">利用規約</a>
           <a href="#" data-i18n="footer-contact">お問い合わせ</a>
         </div>
-        <span class="footer__copy">&copy; 2026 Parallel Insight</span>
+        <div style="display:flex;align-items:center;gap:16px;">
+          <button class="lang-toggle" id="lang-toggle">EN</button>
+          <span class="footer__copy">&copy; 2026 Parallel Insight</span>
+        </div>
       </div>
     </div>
   </footer>
@@ -967,7 +982,20 @@
 
     // ===== i18n =====
     (function () {
-      if (navigator.language.startsWith('ja')) return;
+      function getSaved() { try { return localStorage.getItem('pi-lang'); } catch(e) { return null; } }
+      function isEn() { var s = getSaved(); return s ? s === 'en' : !navigator.language.startsWith('ja'); }
+
+      var en = isEn();
+      var btn = document.getElementById('lang-toggle');
+      if (btn) {
+        btn.textContent = en ? 'JP' : 'EN';
+        btn.addEventListener('click', function () {
+          try { localStorage.setItem('pi-lang', en ? 'ja' : 'en'); } catch(e) {}
+          location.reload();
+        });
+      }
+
+      if (!en) return;
 
       document.documentElement.lang = 'en';
       document.title = 'Parallel Insight — Measure Campaign Impact from CSV';
