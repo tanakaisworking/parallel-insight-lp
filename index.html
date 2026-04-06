@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parallel Insight — CSVだけで施策効果を測定</title>
+  <meta name="description" content="AIが「施策を打たなかった場合」を予測し、実績との差分で効果を測定。CSV1つで因果推論レベルの分析を、コード不要・完全ローカルで。">
+  <link rel="icon" href="assets/top-banner.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Syne:wght@600;700;800&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* ===== Reset & Base ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Noto Sans JP', 'Outfit', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.8;
+      overflow-x: hidden;
+    }
+
+    /* ===== Design Tokens ===== */
+    :root {
+      --bg: #08080f;
+      --surface: #0e0e1c;
+      --surface-2: #16162e;
+      --border: rgba(255,255,255,0.06);
+      --text: #d4d4e0;
+      --text-strong: #f0f0f8;
+      --text-muted: #6e6e88;
+      --accent: #27B282;
+      --accent-dim: rgba(39,178,130,0.12);
+      --blue: #4a7cff;
+      --blue-dim: rgba(74,124,255,0.08);
+
+      --font-display: 'Syne', sans-serif;
+      --font-body: 'Noto Sans JP', 'Outfit', sans-serif;
+      --font-en: 'Outfit', sans-serif;
+
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+      --dur: 0.7s;
+    }
+
+    /* ===== Utilities ===== */
+    .container { max-width: 1080px; margin: 0 auto; padding: 0 clamp(24px, 5vw, 48px); }
+    .container--narrow { max-width: 720px; margin: 0 auto; padding: 0 clamp(24px, 5vw, 48px); }
+
+    .text-muted { color: var(--text-muted); }
+    .text-strong { color: var(--text-strong); }
+    .text-accent { color: var(--accent); }
+
+    .font-display { font-family: var(--font-display); }
+    .font-en { font-family: var(--font-en); }
+
+    /* ===== Reveal ===== */
+    .rv {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+    }
+    .rv.show { opacity: 1; transform: none; }
+    .rv-d1 { transition-delay: .08s; }
+    .rv-d2 { transition-delay: .16s; }
+    .rv-d3 { transition-delay: .24s; }
+    .rv-d4 { transition-delay: .32s; }
+
+    /* ===== Header ===== */
+    .header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      padding: 0 clamp(24px, 5vw, 48px);
+      height: 64px;
+      display: flex; align-items: center; justify-content: space-between;
+      background: rgba(8,8,15,0.7);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+    }
+    .header__logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .header__logo img { height: 24px; }
+    .header__logo span { font-family: var(--font-en); font-weight: 500; font-size: 14px; color: var(--text-muted); letter-spacing: 0.04em; }
+    .header__cta {
+      font-family: var(--font-en); font-size: 13px; font-weight: 500;
+      color: var(--accent); text-decoration: none;
+      padding: 8px 20px;
+      border: 1px solid rgba(39,178,130,0.25);
+      border-radius: 6px;
+      transition: all 0.3s var(--ease);
+      letter-spacing: 0.03em;
+    }
+    .header__cta:hover { background: var(--accent-dim); border-color: rgba(39,178,130,0.5); }
+
+    /* ===== Hero ===== */
+    .hero {
+      min-height: 100vh; min-height: 100dvh;
+      display: flex; align-items: center;
+      position: relative;
+      padding-top: 64px;
+    }
+    .hero__bg {
+      position: absolute; inset: 0; z-index: 0;
+      background:
+        radial-gradient(ellipse 50% 40% at 70% 35%, rgba(39,178,130,0.04) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 50% at 20% 60%, rgba(74,124,255,0.03) 0%, transparent 70%);
+    }
+    .hero__inner {
+      position: relative; z-index: 1;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 60px;
+      padding: 80px 0;
+    }
+    .hero__tagline {
+      font-family: var(--font-display);
+      font-size: clamp(32px, 6vw, 64px);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: var(--text-strong);
+    }
+    .hero__tagline span {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.5em;
+      font-weight: 600;
+      letter-spacing: 0;
+      margin-top: 16px;
+    }
+    .hero__sub {
+      max-width: 520px;
+      font-size: 15px;
+      line-height: 2;
+      color: var(--text-muted);
+      margin-top: 32px;
+    }
+    .hero__signature {
+      font-family: var(--font-display);
+      font-size: clamp(20px, 3vw, 28px);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin-top: 48px;
+      background: linear-gradient(135deg, var(--accent) 0%, #5cdba8 50%, var(--accent) 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero__actions { margin-top: 48px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+    .hero__trust {
+      margin-top: 40px;
+      display: flex; flex-wrap: wrap; gap: 24px;
+      font-family: var(--font-en); font-size: 12px; color: var(--text-muted);
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .hero__trust li { list-style: none; display: flex; align-items: center; gap: 6px; }
+    .hero__trust li::before {
+      content: ''; display: block; width: 4px; height: 4px;
+      border-radius: 50%; background: var(--accent); opacity: 0.6;
+    }
+
+
+    /* ===== Buttons ===== */
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--font-en); font-weight: 600; font-size: 14px;
+      padding: 14px 32px;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: all 0.3s var(--ease);
+      letter-spacing: 0.02em;
+      position: relative;
+    }
+    .btn--primary {
+      background: var(--accent);
+      color: var(--bg);
+    }
+    .btn--primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(39,178,130,0.2);
+    }
+    .btn--ghost {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn--ghost:hover { border-color: rgba(255,255,255,0.15); background: rgba(255,255,255,0.03); }
+
+    .btn svg { width: 16px; height: 16px; }
+
+    /* ===== Section ===== */
+    .section { padding: clamp(80px, 12vw, 160px) 0; }
+    .section__label {
+      font-family: var(--font-en);
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 24px;
+    }
+    .section__heading {
+      font-size: clamp(24px, 4vw, 40px);
+      font-weight: 700;
+      color: var(--text-strong);
+      line-height: 1.3;
+    }
+    .section__lead {
+      font-size: 15px;
+      color: var(--text-muted);
+      line-height: 2;
+      margin-top: 20px;
+      max-width: 560px;
+    }
+
+    /* ===== Divider ===== */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent 0%, var(--border) 50%, transparent 100%);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* ===== Problem ===== */
+    .problems { margin-top: 64px; }
+    .problem-item {
+      padding: 32px 0;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    .problem-item:first-child { border-top: 1px solid var(--border); }
+    .problem-num {
+      font-family: var(--font-en);
+      font-size: 13px; font-weight: 400;
+      color: var(--text-muted);
+      padding-top: 2px;
+      letter-spacing: 0.02em;
+    }
+    .problem-item h3 {
+      font-size: 16px; font-weight: 500;
+      color: var(--text-strong);
+      margin-bottom: 6px;
+    }
+    .problem-item p { font-size: 14px; color: var(--text-muted); line-height: 1.8; }
+
+    .problem-resolve {
+      margin-top: 56px;
+      padding: 40px;
+      border-radius: 12px;
+      background: var(--surface);
+      border-left: 3px solid var(--accent);
+    }
+    .problem-resolve p {
+      font-size: 16px;
+      line-height: 1.9;
+      color: var(--text);
+    }
+
+    /* ===== Steps ===== */
+    .steps { margin-top: 72px; }
+    .step {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: center;
+      padding: 56px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .step:first-child { border-top: 1px solid var(--border); }
+    .step:nth-child(even) { direction: rtl; }
+    .step:nth-child(even) > * { direction: ltr; }
+    .step__num {
+      font-family: var(--font-en);
+      font-size: 56px; font-weight: 300;
+      color: var(--surface-2);
+      line-height: 1;
+      margin-bottom: 16px;
+      letter-spacing: -0.02em;
+    }
+    .step h3 { font-size: 20px; font-weight: 700; color: var(--text-strong); margin-bottom: 12px; }
+    .step p { font-size: 14px; color: var(--text-muted); line-height: 1.9; }
+    .step__visual {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 200px;
+    }
+
+    @media (max-width: 768px) {
+      .step { grid-template-columns: 1fr; gap: 24px; }
+      .step:nth-child(even) { direction: ltr; }
+    }
+
+    /* ===== Mid CTA ===== */
+    .mid-cta {
+      padding: clamp(64px, 10vw, 120px) 0;
+      text-align: center;
+    }
+    .mid-cta__inner {
+      padding: clamp(48px, 8vw, 80px) clamp(32px, 6vw, 64px);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      position: relative;
+      overflow: hidden;
+    }
+    .mid-cta__glow {
+      position: absolute; top: -60%; left: 50%; transform: translateX(-50%);
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, rgba(39,178,130,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .mid-cta h3 { font-size: clamp(20px, 3vw, 28px); font-weight: 700; color: var(--text-strong); position: relative; }
+    .mid-cta p { font-size: 14px; color: var(--text-muted); margin-top: 12px; position: relative; }
+    .mid-cta__buttons { margin-top: 40px; display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; position: relative; }
+
+    /* ===== Concept ===== */
+    .compare {
+      margin-top: 64px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px;
+      background: var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .compare__side { padding: 40px; background: var(--bg); }
+    .compare__side h3 {
+      font-size: 16px; font-weight: 700; color: var(--text-strong);
+      margin-bottom: 24px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .compare__side ul { list-style: none; }
+    .compare__side li {
+      font-size: 14px; color: var(--text-muted); line-height: 2;
+      padding-left: 16px;
+      position: relative;
+    }
+    .compare__side li::before {
+      content: ''; position: absolute; left: 0; top: 12px;
+      width: 5px; height: 5px; border-radius: 50%;
+    }
+    .compare__side--old li::before { background: #5a4040; }
+    .compare__side--new { background: var(--surface); }
+    .compare__side--new li::before { background: var(--accent); }
+    .compare__side li strong { color: var(--text-strong); font-weight: 500; }
+
+    .compare__note {
+      margin-top: 32px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .compare__note strong { font-family: var(--font-en); color: var(--text); font-weight: 500; }
+
+    .csv-hero {
+      margin-top: 80px;
+      padding: 64px 48px;
+      border-radius: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .csv-hero__glow {
+      position: absolute; top: -40%; left: 50%; transform: translateX(-50%);
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(39,178,130,0.05) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .csv-hero__heading {
+      font-size: clamp(24px, 4vw, 40px);
+      font-weight: 700;
+      color: var(--text-strong);
+      line-height: 1.35;
+      position: relative;
+    }
+    .csv-hero__heading em {
+      font-style: normal;
+      color: var(--accent);
+    }
+    .csv-hero__sub {
+      margin-top: 20px;
+      font-size: 15px;
+      color: var(--text-muted);
+      line-height: 2;
+      position: relative;
+      max-width: 540px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .csv-hero__screenshot {
+      margin-top: 40px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .csv-hero__screenshot img {
+      width: 100%;
+      display: block;
+    }
+    .csv-hero__caption {
+      padding: 16px 20px;
+      font-size: 13px;
+      color: var(--text-muted);
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      line-height: 1.6;
+    }
+
+    @media (max-width: 768px) {
+      .compare { grid-template-columns: 1fr; }
+    }
+
+    /* ===== Features ===== */
+    .features {
+      margin-top: 72px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+    }
+    .feature {
+      padding: 48px 40px;
+      background: var(--bg);
+    }
+    .feature h3 { font-size: 16px; font-weight: 700; color: var(--text-strong); margin-bottom: 12px; }
+    .feature p { font-size: 14px; color: var(--text-muted); line-height: 1.9; }
+    .feature__icon {
+      width: 32px; height: 32px;
+      margin-bottom: 20px;
+      color: var(--accent);
+      opacity: 0.7;
+    }
+    @media (max-width: 768px) {
+      .features { grid-template-columns: 1fr; }
+    }
+
+    /* ===== Use Cases ===== */
+    .usecases { margin-top: 64px; }
+    .usecase {
+      padding: 40px 0;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+    .usecase:first-child { border-top: 1px solid var(--border); }
+    .usecase__who {
+      font-family: var(--font-en);
+      font-size: 12px; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--accent);
+      padding-top: 2px;
+    }
+    .usecase h3 { font-size: 15px; font-weight: 500; color: var(--text-strong); margin-bottom: 8px; }
+    .usecase p { font-size: 14px; color: var(--text-muted); line-height: 1.8; }
+    @media (max-width: 640px) {
+      .usecase { grid-template-columns: 1fr; gap: 8px; }
+    }
+
+    /* ===== FAQ ===== */
+    .faqs { margin-top: 56px; }
+    .faq {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .faq:first-child { border-top: 1px solid var(--border); }
+    .faq__q {
+      padding: 24px 0;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 15px; font-weight: 500; color: var(--text-strong);
+    }
+    .faq__icon {
+      font-family: var(--font-en); font-size: 18px; font-weight: 300;
+      color: var(--text-muted);
+      transition: transform 0.3s var(--ease);
+      flex-shrink: 0; margin-left: 16px;
+    }
+    .faq.open .faq__icon { transform: rotate(45deg); }
+    .faq__a {
+      max-height: 0; overflow: hidden;
+      transition: max-height 0.5s var(--ease);
+    }
+    .faq.open .faq__a { max-height: 200px; }
+    .faq__a p {
+      padding-bottom: 24px;
+      font-size: 14px; color: var(--text-muted); line-height: 1.9;
+    }
+
+    /* ===== Final CTA ===== */
+    .final {
+      padding: clamp(100px, 16vw, 200px) 0;
+      text-align: center;
+      position: relative;
+    }
+    .final__glow {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(39,178,130,0.04) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .final__sig {
+      font-family: var(--font-display);
+      font-size: clamp(28px, 5vw, 52px);
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      background: linear-gradient(135deg, var(--accent), #5cdba8);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      position: relative;
+    }
+    .final__sub {
+      font-size: 15px; color: var(--text-muted);
+      margin-top: 20px; position: relative;
+    }
+    .final__actions { margin-top: 48px; position: relative; display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; }
+    .final__meta {
+      margin-top: 40px; position: relative;
+      font-family: var(--font-en); font-size: 12px; color: var(--text-muted);
+      display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+      letter-spacing: 0.04em;
+    }
+
+    /* ===== Footer ===== */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+    }
+    .footer__inner {
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 16px;
+    }
+    .footer__links { display: flex; gap: 24px; }
+    .footer__links a {
+      font-size: 12px; color: var(--text-muted);
+      text-decoration: none; transition: color 0.2s;
+    }
+    .footer__links a:hover { color: var(--text); }
+    .footer__copy { font-family: var(--font-en); font-size: 11px; color: var(--text-muted); opacity: 0.5; }
+
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <a href="#" class="header__logo">
+      <img src="assets/top-banner.png" alt="Parallel Insight">
+      <span>Parallel Insight</span>
+    </a>
+    <a href="#download" class="header__cta">Download</a>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero__bg"></div>
+    <div class="container">
+      <div class="hero__inner">
+        <div>
+          <h1 class="hero__tagline rv">
+            その施策、<br>本当に効いたのか。
+            <span>CSVだけで答えが出る。</span>
+          </h1>
+          <p class="hero__sub rv rv-d1">
+            AIが"施策を打たなかった場合"を予測し、<br>
+            実績との差分で、施策の純粋な効果を測定します。
+          </p>
+          <p class="hero__signature rv rv-d2">Make your Parallel, easily.</p>
+          <div class="hero__actions rv rv-d3">
+            <a href="#download" class="btn btn--primary">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+              無料ダウンロード
+            </a>
+          </div>
+          <ul class="hero__trust rv rv-d4">
+            <li>Free</li>
+            <li>No sign-up</li>
+            <li>100% local</li>
+          </ul>
+        </div>
+
+
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Concept -->
+  <section class="section">
+    <div class="container">
+      <div class="rv">
+        <p class="section__label">Concept</p>
+        <h2 class="section__heading">精緻なデータが揃っていなくても、<br>効果検証はできる</h2>
+        <p class="section__lead">パラレルテストは、自社の過去データから「施策を打たなかった場合」を予測し、実績との差分で効果を測る検証手法です。対照群も、複雑な条件設定も必要ありません。</p>
+      </div>
+      <div class="compare rv">
+        <div class="compare__side compare__side--old">
+          <h3><span style="color:#5a4040;font-size:14px;">&#x2715;</span> ABテスト</h3>
+          <ul>
+            <li>外部に<strong>対照群が必要</strong>。同条件は現実には揃わない</li>
+            <li>東京 vs 関西のような「不純な比較」が横行</li>
+            <li>準備コストが高く、中小企業には非現実的</li>
+          </ul>
+        </div>
+        <div class="compare__side compare__side--new">
+          <h3><span style="color:var(--accent);font-size:14px;">&#x2713;</span> パラレルテスト</h3>
+          <ul>
+            <li><strong>自社の過去データだけ</strong>で完結。外部比較不要</li>
+            <li>自分の過去との比較だから条件不一致がない</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="csv-hero rv">
+        <div class="csv-hero__glow"></div>
+        <p class="csv-hero__heading">時系列のCSVを用意するだけで、<br><em>効果検証と未来予測が一瞬で完了する。</em></p>
+        <p class="csv-hero__sub">これまでコマゴマとした設定やデータ整備に時間をかけていた効果検証が、CSVをドロップするだけで終わる。それがParallel Insightの体験です。</p>
+        <div class="csv-hero__screenshot">
+          <img src="assets/app-screenshot.jpg" alt="Parallel Insight — 効果測定結果の画面">
+          <p class="csv-hero__caption">緑の実績ラインと、点線の予測ライン（施策がなかった場合）の乖離が、施策の効果。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Problem -->
+  <section class="section">
+    <div class="container">
+      <div class="rv">
+        <p class="section__label">Problem</p>
+        <h2 class="section__heading">こんな経験、ありませんか？</h2>
+      </div>
+      <div class="problems">
+        <div class="problem-item rv">
+          <span class="problem-num">01</span>
+          <div>
+            <h3>施策後に売上が伸びた。でも、季節要因かもしれない。</h3>
+            <p>施策の効果なのか、たまたまなのか。数字だけでは判断がつかない。</p>
+          </div>
+        </div>
+        <div class="problem-item rv rv-d1">
+          <span class="problem-num">02</span>
+          <div>
+            <h3>ABテストをやりたいが、対照群を分けられない。</h3>
+            <p>店舗が1つ。商品が1つ。現実には「同条件の比較対象」を用意できない。</p>
+          </div>
+        </div>
+        <div class="problem-item rv rv-d2">
+          <span class="problem-num">03</span>
+          <div>
+            <h3>効果検証はデータサイエンティストに頼むしかなかった。</h3>
+            <p>PythonやRが書けないと因果推論ができない。でも外注するほどの予算はない。</p>
+          </div>
+        </div>
+      </div>
+      <div class="problem-resolve rv">
+        <p>Parallel Insightなら、売上データのCSVを1つ用意するだけ。<br>コードも統計知識も対照群も不要で、<strong class="text-accent">施策の効果を数値で把握</strong>できます。</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- How it Works -->
+  <section class="section">
+    <div class="container">
+      <div class="rv">
+        <p class="section__label">How it works</p>
+        <h2 class="section__heading">使い方</h2>
+      </div>
+      <div class="steps">
+        <div class="step rv">
+          <div>
+            <div class="step__num">01</div>
+            <h3>CSVを読み込む</h3>
+            <p>売上・来客数・PV数など、施策の前後を含む時系列データのCSVをドラッグ&ドロップ。日付列と数値列があれば、特別なフォーマットは不要。</p>
+          </div>
+          <div class="step__visual">
+            <div style="text-align:center;">
+              <svg width="40" height="40" fill="none" stroke="var(--text-muted)" stroke-width="1.2" viewBox="0 0 24 24" style="opacity:0.4"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+              <p style="font-family:var(--font-en);font-size:12px;color:var(--text-muted);margin-top:12px;opacity:0.5;">data.csv</p>
+            </div>
+          </div>
+        </div>
+        <div class="step rv">
+          <div>
+            <div class="step__num">02</div>
+            <h3>施策開始日を指定</h3>
+            <p>「いつから施策を始めたか」をスライダーで選ぶだけ。AIがその時点を境界として、施策前のデータから予測モデルを自動生成。</p>
+          </div>
+          <div class="step__visual">
+            <div style="width:100%;">
+              <div style="display:flex;justify-content:space-between;font-family:var(--font-en);font-size:10px;color:var(--text-muted);opacity:0.4;margin-bottom:8px;"><span>Jan</span><span>Jun</span><span>Dec</span></div>
+              <div style="position:relative;height:4px;background:var(--border);border-radius:2px;">
+                <div style="position:absolute;left:0;top:0;height:4px;width:50%;background:linear-gradient(90deg,var(--blue),var(--accent));border-radius:2px;opacity:0.5;"></div>
+                <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:14px;height:14px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);"></div>
+              </div>
+              <p style="font-family:var(--font-en);font-size:10px;color:var(--accent);text-align:center;margin-top:12px;opacity:0.6;">Intervention Point</p>
+            </div>
+          </div>
+        </div>
+        <div class="step rv">
+          <div>
+            <div class="step__num">03</div>
+            <h3>結果を確認</h3>
+            <p>実績と予測ライン（パラレルライン）の乖離がグラフで即表示。累計増分、増分率、信頼区間で施策の効果を定量的に把握できる。</p>
+          </div>
+          <div class="step__visual">
+            <div style="text-align:center;font-family:var(--font-en);">
+              <p style="font-size:32px;font-weight:700;color:var(--text-strong);">+23.4%</p>
+              <p style="font-size:11px;color:var(--text-muted);margin-top:4px;">Cumulative Lift</p>
+              <div style="display:flex;gap:20px;justify-content:center;margin-top:16px;font-size:11px;">
+                <span style="color:var(--accent);">+1,240 units</span>
+                <span style="color:var(--text-muted);opacity:0.5;">CI: 95%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="rv" style="margin-top:48px;font-size:13px;color:var(--text-muted);text-align:center;">
+        完全ローカル処理。インターネット接続すら不要です。
+      </p>
+    </div>
+  </section>
+
+  <!-- Mid CTA -->
+  <section class="mid-cta" id="download">
+    <div class="container">
+      <div class="mid-cta__inner rv">
+        <div class="mid-cta__glow"></div>
+        <h3>今すぐ試してみる</h3>
+        <p>売上データのCSVがあれば、すぐに使えます。</p>
+        <div class="mid-cta__buttons">
+          <a href="#" class="btn btn--ghost">
+            <svg fill="none" viewBox="0 0 24 24"><path fill="currentColor" d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11Z"/></svg>
+            Mac
+          </a>
+          <a href="#" class="btn btn--ghost">
+            <svg fill="currentColor" viewBox="0 0 24 24" width="16" height="16"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
+            Windows
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Features -->
+  <section class="section">
+    <div class="container">
+      <div class="rv">
+        <p class="section__label">Features</p>
+        <h2 class="section__heading">なぜ Parallel Insight なのか</h2>
+      </div>
+      <div class="features rv">
+        <div class="feature">
+          <svg class="feature__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          <h3>完全ローカル処理</h3>
+          <p>データが一切外部に出ない。サーバーを経由しないため、インターネット接続すら不要。機密データも安心して分析できます。</p>
+        </div>
+        <div class="feature">
+          <svg class="feature__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          <h3>ゼロショット推論</h3>
+          <p>事前学習・チューニング不要。CSVを入れた瞬間に分析が始まります。あらゆる業種のデータに対応。</p>
+        </div>
+        <div class="feature">
+          <svg class="feature__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          <h3>信頼区間つき</h3>
+          <p>楽観〜悲観の幅を可視化。「たまたまの変動」なのか「本当に効いた」のかを統計的に区別できます。</p>
+        </div>
+        <div class="feature">
+          <svg class="feature__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          <h3>コード不要</h3>
+          <p>Python・Rが書けなくても、因果推論レベルの分析ができる。マーケター自身が効果検証を実行できます。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Use Cases -->
+  <section class="section">
+    <div class="container">
+      <div class="rv">
+        <p class="section__label">Use cases</p>
+        <h2 class="section__heading">こんな場面で使える</h2>
+      </div>
+      <div class="usecases">
+        <div class="usecase rv">
+          <span class="usecase__who">Restaurant</span>
+          <div>
+            <h3>新メニュー投入後、売上は上がったが本当に施策のおかげ？</h3>
+            <p>「施策がなかった場合」の予測売上と比較することで、施策による上乗せ分を推定できます。</p>
+          </div>
+        </div>
+        <div class="usecase rv rv-d1">
+          <span class="usecase__who">E-Commerce</span>
+          <div>
+            <h3>セール施策の本当の上乗せ分だけを測りたい。</h3>
+            <p>「セールがなかった場合の予測売上」との差分で、施策の純粋な貢献がわかります。</p>
+          </div>
+        </div>
+        <div class="usecase rv rv-d2">
+          <span class="usecase__who">HR / Recruiting</span>
+          <div>
+            <h3>採用媒体を変えた効果を検証したい。</h3>
+            <p>応募数の時系列データだけで、媒体変更の効果を検証できます。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- FAQ -->
+  <section class="section">
+    <div class="container--narrow">
+      <div class="rv">
+        <p class="section__label">FAQ</p>
+        <h2 class="section__heading">よくある質問</h2>
+      </div>
+      <div class="faqs rv">
+        <div class="faq" onclick="this.classList.toggle('open')">
+          <div class="faq__q">どんなCSVが必要ですか？<span class="faq__icon">+</span></div>
+          <div class="faq__a"><p>日付列と数値列が含まれていればOKです。売上・来客数・PV数・応募数など、時系列で推移するデータならどんなものでも分析できます。</p></div>
+        </div>
+        <div class="faq" onclick="this.classList.toggle('open')">
+          <div class="faq__q">予測の精度はどのくらいですか？<span class="faq__icon">+</span></div>
+          <div class="faq__a"><p>信頼区間（楽観〜悲観の幅）が表示されるため、予測の確度を自分で確認・判断できます。データが多いほど精度は上がります。</p></div>
+        </div>
+        <div class="faq" onclick="this.classList.toggle('open')">
+          <div class="faq__q">データは外部に送られますか？<span class="faq__icon">+</span></div>
+          <div class="faq__a"><p>一切送られません。すべての分析処理はお使いのPC上で完結します。インターネット接続がない環境でも動作します。</p></div>
+        </div>
+        <div class="faq" onclick="this.classList.toggle('open')">
+          <div class="faq__q">対応OSは？<span class="faq__icon">+</span></div>
+          <div class="faq__a"><p>Mac（Apple Silicon / Intel）およびWindows（64bit）に対応しています。</p></div>
+        </div>
+        <div class="faq" onclick="this.classList.toggle('open')">
+          <div class="faq__q">将来有料になりますか？<span class="faq__icon">+</span></div>
+          <div class="faq__a"><p>ローカル版は無料のまま提供を続ける予定です。将来的にクラウド版を有料で提供する計画がありますが、ローカル版の機能が制限されることはありません。</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Final CTA -->
+  <section class="final">
+    <div class="final__glow"></div>
+    <div class="container rv">
+      <img src="assets/top-banner.png" alt="" style="height:40px;opacity:0.5;margin-bottom:40px;">
+      <p class="final__sig">Make your Parallel, easily.</p>
+      <p class="final__sub">あなたのビジネスに、もう一つの世界線を。</p>
+      <div class="final__actions">
+        <a href="#" class="btn btn--primary">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+          無料ダウンロード
+        </a>
+      </div>
+      <div class="final__meta">
+        <span>Mac / Windows</span>
+        <span>&middot;</span>
+        <span>Free</span>
+        <span>&middot;</span>
+        <span>No sign-up</span>
+        <span>&middot;</span>
+        <span>100% Local</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__inner">
+        <div class="footer__links">
+          <a href="#">プライバシーポリシー</a>
+          <a href="#">利用規約</a>
+          <a href="#">お問い合わせ</a>
+        </div>
+        <span class="footer__copy">&copy; 2026 Parallel Insight</span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('show'); });
+    }, { threshold: 0.08, rootMargin: '0px 0px -32px 0px' });
+    document.querySelectorAll('.rv').forEach(el => observer.observe(el));
+  </script>
+
+</body>
+</html>
