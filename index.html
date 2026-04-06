@@ -189,8 +189,13 @@
     .hero__mirror-inner {
       transform: scaleX(-1);
     }
+    /* mirror visible → shift content right to visually center the combined view */
+    .hero__col {
+      transform: translateX(min(8vw, 120px));
+    }
     @media (max-width: 1100px) {
       .hero__mirror-wrap { display: none; }
+      .hero__col { transform: none; }
     }
     @media (max-width: 640px) {
       .hero__main { padding-left: 0; }
@@ -600,7 +605,7 @@
     <div class="hero__bg"></div>
     <div class="container">
       <div class="hero__inner">
-        <div>
+        <div class="hero__col">
           <div class="hero__main">
             <div class="hero__line" aria-hidden="true"></div>
             <div class="hero__mirror-wrap" aria-hidden="true">
